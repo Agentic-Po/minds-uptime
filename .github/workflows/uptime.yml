@@ -1,0 +1,39 @@
+name: minds-uptime
+on:
+  schedule:
+    - cron: '7 * * * *'   # hourly at :07 (offset avoids top-of-hour cron congestion)
+  workflow_dispatch: {}
+
+concurrency:
+  group: uptime
+  cancel-in-progress: false
+
+permissions:
+  contents: write   # commit state.json back
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Install minds CLI
+        run: npm i -g @animocabrands/minds-cli
+      - name: Probe + alert
+        env:
+          MINDS_BUILDER_API_KEY: ${{ secrets.MINDS_BUILDER_API_KEY }}
+          TG_BOT_TOKEN: ${{ secrets.TG_BOT_TOKEN }}
+          TG_CHAT_ID: ${{ secrets.TG_CHAT_ID }}
+          PROBE_MIND: ${{ secrets.PROBE_MIND }}
+          CONTROL_MIND: ${{ secrets.CONTROL_MIND }}
+        run: node monitor.mjs
+      - name: Persist state
+        run: |
+          git config user.name "uptime-bot"
+          git config user.email "actions@github.com"
+          git add state.json
+          git diff --cached --quiet || git commit -m "state: $(date -u +%FT%TZ)"
+          git push
