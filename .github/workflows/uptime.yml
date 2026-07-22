@@ -14,14 +14,24 @@ permissions:
 jobs:
   ping:
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    # The job self-loops on a 12-minute grid for ~50 min (GitHub throttles
+    # high-frequency schedule triggers, so we probe inside one job instead of
+    # asking for more triggers). 60 = the 50-min budget plus a full final round.
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # PINNED. An unpinned install let minds-cli 0.1.3 (published
+      # 2026-07-21T09:16Z) onto fresh runners mid-flight; it renamed the history
+      # field partyType -> senderType, which silently blinded the probe and
+      # produced ~19h of false "outage" pages while the agent was answering
+      # every single time. Bump this deliberately, never implicitly.
       - name: Install CLI
-        run: npm i -g @animocabrands/minds-cli
+        run: |
+          npm i -g @animocabrands/minds-cli@0.1.3
+          minds --version
       - name: Probe + alert
         env:
           MINDS_BUILDER_API_KEY: ${{ secrets.MINDS_BUILDER_API_KEY }}
