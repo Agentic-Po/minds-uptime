@@ -1,7 +1,7 @@
 name: uptime
 on:
   schedule:
-    - cron: '7 * * * *'   # hourly at :07 (offset avoids top-of-hour cron congestion)
+    - cron: '5,20,35,50 * * * *'   # 4x/hour, off-peak minutes; each job is ONE short round now
   workflow_dispatch: {}
 
 concurrency:
@@ -14,10 +14,10 @@ permissions:
 jobs:
   ping:
     runs-on: ubuntu-latest
-    # The job self-loops on a 12-minute grid for ~50 min (GitHub throttles
-    # high-frequency schedule triggers, so we probe inside one job instead of
-    # asking for more triggers). 60 = the 50-min budget plus a full final round.
-    timeout-minutes: 60
+    # One round per job (2026-08-30): the old ~50-min self-loop held a runner
+    # ~90% of wall-clock and tripped account-level cron deprioritization
+    # (2026-08-26 starvation, all repos). Budget = worst-case probe + control.
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4

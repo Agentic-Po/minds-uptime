@@ -288,27 +288,16 @@ writeFileSync('state.json', JSON.stringify({ s: state.state, a: state.lastOkAt, 
 console.log(`result: ${kind}${latencyS != null ? ` (${latencyS}s)` : ''} bal=${balance}`); // stdout only, not committed
 }
 
-// ---- driver: a 12-minute grid inside ONE job ------------------------------
-// GitHub throttles high-frequency `schedule` triggers hard: this workflow asks
-// for hourly and actually landed every 2-3 hours, with the fire minute drifting
-// by up to 50 minutes. Rather than fight the scheduler, one triggered job now
-// stays alive and probes on a 12-minute WALL-CLOCK grid. That restores true
-// 12-minute resolution, keeps slots aligned across jobs, and is immune to
-// trigger jitter — and Actions minutes are free on a public repo.
-const GRID_MS = 12 * 60_000;
-const JOB_BUDGET_MS = 50 * 60_000;   // finish before the next hourly trigger
-const startedAt = Date.now();
-
-for (let round = 1; ; round++) {
-  console.log(`--- round ${round} (t+${Math.round((Date.now() - startedAt) / 60000)}m) ---`);
-  // A thrown round must never kill the job: the remaining slots are still
-  // worth measuring, and an unhandled rejection would look like a green run.
-  try { await runRound(); }
-  catch (e) { console.log(`round ${round} threw: ${String(e.message).slice(0, 200)}`); }
-
-  const nextSlot = Math.ceil((Date.now() + 1_000) / GRID_MS) * GRID_MS;
-  if (nextSlot - startedAt > JOB_BUDGET_MS) break;
-  const wait = nextSlot - Date.now();
-  if (wait > 0) await new Promise(r => setTimeout(r, wait));
-}
-console.log(`job complete after ${Math.round((Date.now() - startedAt) / 60000)} min`);
+// ---- driver: ONE round per job --------------------------------------------
+// HISTORY: this used to self-loop on a 12-minute grid for ~50 min per hourly
+// job, because GitHub's cron was flaky. Taskforce finding 2026-08-30: that
+// loop held a hosted runner ~90% of all wall-clock time, which is the
+// signature GitHub's fair-use limiter targets — and from 2026-08-26 the
+// ACCOUNT's scheduled events collapsed to ~8% delivery across ALL repos
+// (synchronized starvation in this repo and skill-payout-dashboard). The
+// self-loop was poisoning the very scheduler it was compensating for.
+// Now: one probe round per job (~2-7 min), triggered 4x/hour by cron on
+// off-peak minutes. Same practical resolution, ~10% of the runner footprint.
+try { await runRound(); }
+catch (e) { console.log(`round threw: ${String(e.message).slice(0, 200)}`); process.exitCode = 0; }
+console.log('single-round job complete');
